@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --andromeda-50:  #EAF3DE;
+  --andromeda-100: #C0DD97;
+  --andromeda-200: #97C459;
+  --andromeda-400: #639922;
+  --andromeda-600: #3B6D11;
+  --andromeda-800: #27500A;
+  --andromeda-900: #173404;
+}
+
+@layer base {
+  body {
+    @apply bg-zinc-950 text-zinc-100 antialiased;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-zinc-900 border border-zinc-800 rounded-xl p-5;
+  }
+  .btn-primary {
+    @apply bg-andromeda-400 hover:bg-andromeda-600 text-white font-medium
+           px-4 py-2.5 rounded-lg transition-colors duration-150 text-sm;
+  }
+  .btn-ghost {
+    @apply border border-zinc-700 hover:border-zinc-500 text-zinc-300
+           hover:text-white px-4 py-2.5 rounded-lg transition-colors duration-150 text-sm;
+  }
+  .input {
+    @apply bg-zinc-800 border border-zinc-700 focus:border-andromeda-400
+           text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2.5
+           text-sm outline-none transition-colors w-full;
+  }
+  .label {
+    @apply text-xs font-medium text-zinc-400 uppercase tracking-wide mb-1.5 block;
+  }
+  .badge-luz   { @apply bg-amber-500/15 text-amber-400 text-xs px-2 py-0.5 rounded-full; }
+  .badge-agua  { @apply bg-blue-500/15 text-blue-400 text-xs px-2 py-0.5 rounded-full; }
+  .badge-gas   { @apply bg-orange-500/15 text-orange-400 text-xs px-2 py-0.5 rounded-full; }
+}
