@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import clsx from 'clsx'
 
 interface Props { variant?: 'primary' | 'default' }
@@ -60,6 +61,7 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  const supabase = createClient()
 
   function handleOpen() {
     setOpen(true); setStep('idle'); setPreview(null); setExtracted(null); setError(null)
@@ -97,10 +99,14 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
     if (!extracted) return
     setStep('saving')
     try {
+      // Obtener user_id desde el cliente Supabase (browser tiene la sesión)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('No hay sesión activa — cierra sesión y vuelve a entrar')
+
       const res = await fetch('/api/recibos/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(extracted),
+        body: JSON.stringify({ ...extracted, user_id: user.id }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Error al guardar')
@@ -121,7 +127,6 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
 
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 rounded-md bg-andromeda-800 flex items-center justify-center">
@@ -137,8 +142,6 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
             </div>
 
             <div className="p-6">
-
-              {/* IDLE */}
               {step === 'idle' && (
                 <div>
                   <input ref={inputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFileInput} />
@@ -148,7 +151,7 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                     onDragLeave={() => setDragOver(false)}
                     onClick={() => inputRef.current?.click()}
                     className={clsx(
-                      'relative border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-200',
+                      'border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-200',
                       dragOver ? 'border-andromeda-400 bg-andromeda-800/20 scale-[1.01]' : 'border-zinc-700 hover:border-andromeda-600 hover:bg-zinc-800/40'
                     )}
                   >
@@ -159,10 +162,7 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                     </div>
                     {dragOver
                       ? <p className="text-andromeda-200 font-medium text-sm">Suelta aquí</p>
-                      : <>
-                          <p className="text-zinc-200 font-medium text-sm mb-1">Arrastra el recibo aquí</p>
-                          <p className="text-zinc-500 text-xs">o toca para seleccionar · Foto o PDF</p>
-                        </>
+                      : <><p className="text-zinc-200 font-medium text-sm mb-1">Arrastra el recibo aquí</p><p className="text-zinc-500 text-xs">o toca para seleccionar · Foto o PDF</p></>
                     }
                   </div>
                   <div className="flex gap-2 mt-4">
@@ -176,7 +176,6 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                 </div>
               )}
 
-              {/* PROCESSING */}
               {step === 'processing' && (
                 <div className="text-center py-10">
                   {preview && <img src={preview} alt="" className="w-20 h-20 object-cover rounded-xl mx-auto mb-5 opacity-50 border border-zinc-700" />}
@@ -189,28 +188,21 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                 </div>
               )}
 
-              {/* CONFIRM */}
               {step === 'confirm' && extracted && (
                 <div>
-                  {/* Header servicio + confianza */}
                   <div className="flex items-center gap-3 mb-4">
                     <span className={SVC[extracted.service_type].badge}>
                       {SVC[extracted.service_type].icon} {SVC[extracted.service_type].label}
                     </span>
-                    <span className="text-xs text-zinc-500">{extracted.provider}</span>
-                    <div className="flex-1" />
-                    <span className="text-xs text-zinc-500">IA {Math.round(extracted.ai_confidence * 100)}%</span>
+                    <span className="text-xs text-zinc-500 truncate flex-1">{extracted.provider}</span>
+                    <span className="text-xs text-zinc-600">IA {Math.round(extracted.ai_confidence * 100)}%</span>
                   </div>
-
-                  {/* Total destacado */}
                   <div className="flex items-center justify-between bg-andromeda-800/30 border border-andromeda-600/30 rounded-xl px-4 py-3 mb-4">
                     <span className="text-sm text-zinc-400">Total a pagar</span>
                     <span className="text-2xl font-semibold text-andromeda-200">
                       ${extracted.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
-
-                  {/* Datos del recibo */}
                   <div className="bg-zinc-800/40 rounded-xl px-4 py-1 mb-5 max-h-52 overflow-y-auto">
                     <Row label="Periodo" value={extracted.period_start && extracted.period_end ? `${extracted.period_start} → ${extracted.period_end}` : null} />
                     <Row label="Fecha límite" value={extracted.due_date} />
@@ -228,7 +220,6 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                     <Row label="No. cuenta" value={extracted.account_number} />
                     <Row label="NIS" value={extracted.nis} />
                   </div>
-
                   <div className="flex gap-3">
                     <button onClick={() => setStep('idle')} className="btn-ghost flex-1">Reintentar</button>
                     <button onClick={handleSave} className="btn-primary flex-1">Guardar recibo</button>
@@ -236,7 +227,6 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                 </div>
               )}
 
-              {/* SAVING */}
               {step === 'saving' && (
                 <div className="text-center py-10">
                   <div className="w-10 h-10 border-2 border-andromeda-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
@@ -244,7 +234,6 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                 </div>
               )}
 
-              {/* DONE */}
               {step === 'done' && (
                 <div className="text-center py-10">
                   <div className="w-14 h-14 rounded-full bg-andromeda-800/60 border border-andromeda-600/40 flex items-center justify-center mx-auto mb-4">
@@ -255,7 +244,6 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                 </div>
               )}
 
-              {/* ERROR */}
               {step === 'error' && (
                 <div className="text-center py-8">
                   <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
