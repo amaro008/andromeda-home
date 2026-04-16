@@ -1,56 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServerClient } from '@supabase/ssr'
 
 export async function POST(request: NextRequest) {
-  const allCookies = request.cookies.getAll()
-  const hasSession = allCookies.some(c =>
-    c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
-  )
-  if (!hasSession) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  }
-
-  // Obtener user_id — intentar desde cookie primero, luego SDK
-  let userId: string | null = null
-  const authCookie = allCookies.find(c =>
-    c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
-  )
-  if (authCookie) {
-    try {
-      // La cookie puede ser base64 o JSON directo
-      let val = authCookie.value
-      try { val = Buffer.from(val, 'base64').toString() } catch {}
-      const parsed = JSON.parse(val)
-      userId = parsed?.user?.id ?? parsed?.sub ?? null
-    } catch {}
-  }
-
-  if (!userId) {
-    try {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      userId = session?.user?.id ?? null
-    } catch (e) {
-      console.error('[andromeda] getSession error:', e)
+  // Crear cliente de Supabase pasando las cookies del request directamente
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll() {
+          // No necesitamos setear cookies en esta ruta
+        },
+      },
     }
-  }
+  )
 
-  console.log('[andromeda] save userId:', userId ? 'found' : 'not found')
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-  if (!userId) {
-    // Último intento: usar service role si está disponible
-    return NextResponse.json({ error: 'No se pudo obtener usuario — intenta cerrar sesión y volver a entrar' }, { status: 401 })
+  console.log('[save] user:', user?.id ?? 'null', 'error:', userError?.message ?? 'none')
+  console.log('[save] cookies:', request.cookies.getAll().map(c => c.name).join(', '))
+
+  if (!user) {
+    return NextResponse.json(
+      { error: `No autorizado: ${userError?.message ?? 'sin sesión'}` },
+      { status: 401 }
+    )
   }
 
   try {
-    const supabase = createClient()
     const body = await request.json()
 
     const { error } = await supabase
       .schema('andromeda')
       .from('receipts')
       .insert({
-        user_id:                  userId,
+        user_id:                  user.id,
         service_type:             body.service_type,
         provider:                 body.provider ?? null,
         issue_date:               body.issue_date ?? null,
@@ -82,13 +69,13 @@ export async function POST(request: NextRequest) {
       })
 
     if (error) {
-      console.error('[andromeda] insert error:', error)
+      console.error('[save] insert error:', error)
       throw error
     }
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {
-    console.error('[andromeda] save error:', err.message)
+    console.error('[save] error:', err.message)
     return NextResponse.json({ error: err.message ?? 'Error al guardar' }, { status: 500 })
   }
 }
