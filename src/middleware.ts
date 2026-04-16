@@ -9,7 +9,9 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll() },
+        getAll() {
+          return request.cookies.getAll()
+        },
         setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({ request })
@@ -21,16 +23,17 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // IMPORTANTE: usar getSession en middleware, no getUser
+  const { data: { session } } = await supabase.auth.getSession()
 
   const protectedPaths = ['/dashboard', '/recibos', '/mantenimiento', '/energia']
   const isProtected = protectedPaths.some(p => request.nextUrl.pathname.startsWith(p))
 
-  if (isProtected && !user) {
+  if (isProtected && !session) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (request.nextUrl.pathname === '/login' && user) {
+  if (request.nextUrl.pathname === '/login' && session) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
