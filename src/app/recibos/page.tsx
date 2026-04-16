@@ -11,8 +11,8 @@ export default async function RecibosPage() {
   const supabase = createClient()
 
   const { data: receipts, error } = await supabase
-    .schema('andromeda')
-    .from('receipts')
+    
+    .from('andromeda_receipts')
     .select('*')
     .order('issue_date', { ascending: false })
 

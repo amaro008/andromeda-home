@@ -22,8 +22,8 @@ export default async function DashboardPage() {
   const { data: { session } } = await supabase.auth.getSession()
 
   const { data: receipts } = await supabase
-    .schema('andromeda')
-    .from('receipts')
+    
+    .from('andromeda_receipts')
     .select('*')
     .order('issue_date', { ascending: false })
     .limit(20)
