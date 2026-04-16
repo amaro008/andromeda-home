@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent'
-
 const EXTRACT_PROMPT = `Eres un asistente especializado en leer recibos de servicios del hogar en México.
 Analiza la imagen del recibo y extrae los datos.
 
@@ -27,7 +25,6 @@ Reglas:
 - Si no puedes leer bien el recibo baja ai_confidence a menos de 0.5`
 
 export async function POST(request: NextRequest) {
-  // Verificar sesión por cookie directamente — mismo patrón que el middleware
   const allCookies = request.cookies.getAll()
   const hasSession = allCookies.some(c =>
     c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
@@ -48,6 +45,9 @@ export async function POST(request: NextRequest) {
     const base64 = Buffer.from(bytes).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
+    // Usar gemini-2.0-flash con API v1beta
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
+
     const body = {
       contents: [{
         parts: [
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       generationConfig: { temperature: 0.1, maxOutputTokens: 1024 }
     }
 
-    const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
