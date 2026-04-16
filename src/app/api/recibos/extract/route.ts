@@ -43,7 +43,11 @@ export async function POST(request: NextRequest) {
     const base64 = Buffer.from(bytes).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=${apiKey}`
+    // gemini-2.5-flash — modelo estable confirmado en cuenta
+    const model = 'gemini-2.5-flash'
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+
+    console.log(`[andromeda] usando modelo: ${model}`)
 
     const body = {
       contents: [{
@@ -67,13 +71,17 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     })
 
+    const data = await res.json()
+
     if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error?.message ?? 'Gemini error')
+      const msg = data?.error?.message ?? JSON.stringify(data).substring(0, 300)
+      console.error(`[andromeda] Gemini error ${res.status}:`, msg)
+      throw new Error(msg)
     }
 
-    const data = await res.json()
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    console.log(`[andromeda] Gemini respuesta (${text.length} chars):`, text.substring(0, 200))
+
     const clean = text.replace(/```json|```/g, '').trim()
     const extracted = JSON.parse(clean)
 
@@ -82,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(extracted)
   } catch (err: any) {
-    console.error('Gemini extract error:', err)
+    console.error('[andromeda] Gemini extract error:', err.message)
     return NextResponse.json({ error: err.message ?? 'Error al procesar' }, { status: 500 })
   }
 }
