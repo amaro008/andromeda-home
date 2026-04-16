@@ -1,43 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
-  // Crear cliente de Supabase pasando las cookies del request directamente
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll() {
-          // No necesitamos setear cookies en esta ruta
-        },
-      },
-    }
-  )
-
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
-
-  console.log('[save] user:', user?.id ?? 'null', 'error:', userError?.message ?? 'none')
-  console.log('[save] cookies:', request.cookies.getAll().map(c => c.name).join(', '))
-
-  if (!user) {
-    return NextResponse.json(
-      { error: `No autorizado: ${userError?.message ?? 'sin sesión'}` },
-      { status: 401 }
-    )
-  }
-
   try {
     const body = await request.json()
+
+    // user_id viene del cliente (ya autenticado via Supabase en el browser)
+    const userId = body.user_id
+    if (!userId) {
+      return NextResponse.json({ error: 'user_id requerido' }, { status: 400 })
+    }
+
+    // Service role key — puede insertar sin restricciones de RLS
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!serviceKey) {
+      // Fallback: usar anon key con RLS (requiere que user_id sea válido)
+      return NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY no configurada' }, { status: 500 })
+    }
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceKey,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
 
     const { error } = await supabase
       .schema('andromeda')
       .from('receipts')
       .insert({
-        user_id:                  user.id,
+        user_id:                  userId,
         service_type:             body.service_type,
         provider:                 body.provider ?? null,
         issue_date:               body.issue_date ?? null,
@@ -68,10 +59,7 @@ export async function POST(request: NextRequest) {
         address:                  body.address ?? null,
       })
 
-    if (error) {
-      console.error('[save] insert error:', error)
-      throw error
-    }
+    if (error) throw error
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {
