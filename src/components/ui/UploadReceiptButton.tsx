@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import clsx from 'clsx'
 
@@ -8,7 +8,7 @@ interface Props {
   variant?: 'primary' | 'default'
 }
 
-type Step = 'idle' | 'preview' | 'processing' | 'confirm' | 'saving' | 'done' | 'error'
+type Step = 'idle' | 'processing' | 'confirm' | 'saving' | 'done' | 'error'
 
 interface ExtractedData {
   service_type: 'luz' | 'agua' | 'gas'
@@ -24,6 +24,9 @@ interface ExtractedData {
   raw_text: string
 }
 
+const SERVICE_ICON: Record<string, string> = { luz: '⚡', agua: '💧', gas: '🔥' }
+const SERVICE_LABEL: Record<string, string> = { luz: 'Luz', agua: 'Agua', gas: 'Gas' }
+
 export default function UploadReceiptButton({ variant = 'default' }: Props) {
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<Step>('idle')
@@ -31,6 +34,7 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
   const [preview, setPreview] = useState<string | null>(null)
   const [extracted, setExtracted] = useState<ExtractedData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
@@ -43,37 +47,20 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
     setError(null)
   }
 
-  function handleClose() {
-    setOpen(false)
-  }
+  function handleClose() { setOpen(false) }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
-    if (!f) return
+  async function processFile(f: File) {
     setFile(f)
-    if (f.type.startsWith('image/')) {
-      const url = URL.createObjectURL(f)
-      setPreview(url)
-    } else {
-      setPreview(null)
-    }
-    setStep('preview')
-  }
-
-  async function handleProcess() {
-    if (!file) return
+    if (f.type.startsWith('image/')) setPreview(URL.createObjectURL(f))
+    else setPreview(null)
     setStep('processing')
-    setError(null)
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const res = await fetch('/api/recibos/extract', { method: 'POST', body: formData })
+      const fd = new FormData()
+      fd.append('file', f)
+      const res = await fetch('/api/recibos/extract', { method: 'POST', body: fd })
       const data = await res.json()
-
-      if (!res.ok) throw new Error(data.error ?? 'Error al procesar el recibo')
-
+      if (!res.ok) throw new Error(data.error ?? 'Error al procesar')
       setExtracted(data)
       setStep('confirm')
     } catch (err: any) {
@@ -82,10 +69,28 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
     }
   }
 
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) processFile(f)
+  }
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const f = e.dataTransfer.files?.[0]
+    if (f && (f.type.startsWith('image/') || f.type === 'application/pdf')) processFile(f)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback(() => setDragOver(false), [])
+
   async function handleSave() {
     if (!extracted) return
     setStep('saving')
-
     try {
       const res = await fetch('/api/recibos/save', {
         method: 'POST',
@@ -94,163 +99,180 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Error al guardar')
-
       setStep('done')
-      setTimeout(() => {
-        setOpen(false)
-        router.refresh()
-      }, 1500)
+      setTimeout(() => { setOpen(false); router.refresh() }, 1500)
     } catch (err: any) {
       setError(err.message)
       setStep('error')
     }
   }
 
-  const SERVICE_COLORS: Record<string, string> = {
-    luz: 'text-amber-400',
-    agua: 'text-blue-400',
-    gas: 'text-orange-400',
-  }
-
   return (
     <>
-      <button
-        onClick={handleOpen}
-        className={variant === 'primary' ? 'btn-primary' : 'btn-ghost'}
-      >
+      <button onClick={handleOpen} className={variant === 'primary' ? 'btn-primary' : 'btn-ghost'}>
         + Subir recibo
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-              <h3 className="text-sm font-medium text-zinc-100">Subir recibo</h3>
-              <button onClick={handleClose} className="text-zinc-500 hover:text-zinc-300 transition-colors">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-md bg-andromeda-800 flex items-center justify-center">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#97C459" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/>
+                  </svg>
+                </div>
+                <h3 className="text-sm font-medium text-zinc-100">Nuevo recibo</h3>
+              </div>
+              <button onClick={handleClose} className="text-zinc-600 hover:text-zinc-300 transition-colors">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
 
             <div className="p-6">
-              {/* STEP: idle — zona de carga */}
+
+              {/* IDLE — drag & drop zone */}
               {step === 'idle' && (
                 <div>
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    accept="image/*,application/pdf"
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
-                  <button
+                  <input ref={inputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFileInput} />
+                  <div
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
                     onClick={() => inputRef.current?.click()}
-                    className="w-full border-2 border-dashed border-zinc-700 hover:border-andromeda-600 rounded-xl p-10 text-center transition-colors group"
+                    className={clsx(
+                      'relative border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-200',
+                      dragOver
+                        ? 'border-andromeda-400 bg-andromeda-800/20 scale-[1.01]'
+                        : 'border-zinc-700 hover:border-andromeda-600 hover:bg-zinc-800/40'
+                    )}
                   >
-                    <div className="w-10 h-10 rounded-lg bg-zinc-800 group-hover:bg-andromeda-800/40 flex items-center justify-center mx-auto mb-3 transition-colors">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#639922" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <div className={clsx(
+                      'w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 transition-colors',
+                      dragOver ? 'bg-andromeda-800/60' : 'bg-zinc-800'
+                    )}>
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={dragOver ? '#97C459' : '#52525b'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/>
                       </svg>
                     </div>
-                    <p className="text-sm text-zinc-300 font-medium">Toca para seleccionar</p>
-                    <p className="text-xs text-zinc-500 mt-1">Foto o PDF del recibo</p>
-                  </button>
-                </div>
-              )}
+                    {dragOver ? (
+                      <p className="text-andromeda-200 font-medium text-sm">Suelta aquí</p>
+                    ) : (
+                      <>
+                        <p className="text-zinc-200 font-medium text-sm mb-1">Arrastra el recibo aquí</p>
+                        <p className="text-zinc-500 text-xs">o toca para seleccionar · Foto o PDF</p>
+                      </>
+                    )}
+                  </div>
 
-              {/* STEP: preview */}
-              {step === 'preview' && (
-                <div>
-                  {preview ? (
-                    <img src={preview} alt="Recibo" className="w-full max-h-52 object-contain rounded-lg mb-4 bg-zinc-800" />
-                  ) : (
-                    <div className="w-full h-24 flex items-center justify-center bg-zinc-800 rounded-lg mb-4">
-                      <p className="text-zinc-400 text-sm">📄 {file?.name}</p>
-                    </div>
-                  )}
-                  <p className="text-xs text-zinc-500 text-center mb-5">
-                    La IA leerá el recibo y extraerá fecha, consumo e importe
-                  </p>
-                  <div className="flex gap-3">
-                    <button onClick={() => setStep('idle')} className="btn-ghost flex-1">Cambiar</button>
-                    <button onClick={handleProcess} className="btn-primary flex-1">Procesar con IA</button>
+                  <div className="flex items-center gap-3 mt-4">
+                    {['luz', 'agua', 'gas'].map(s => (
+                      <div key={s} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-zinc-800/50 border border-zinc-800">
+                        <span className="text-sm">{SERVICE_ICON[s]}</span>
+                        <span className="text-xs text-zinc-500">{SERVICE_LABEL[s]}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* STEP: processing */}
+              {/* PROCESSING */}
               {step === 'processing' && (
-                <div className="text-center py-8">
-                  <div className="w-10 h-10 border-2 border-andromeda-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-sm text-zinc-300 font-medium">Leyendo recibo...</p>
-                  <p className="text-xs text-zinc-500 mt-1">La IA está extrayendo los datos</p>
+                <div className="text-center py-10">
+                  {preview && (
+                    <img src={preview} alt="Recibo" className="w-24 h-24 object-cover rounded-xl mx-auto mb-5 opacity-60 border border-zinc-700" />
+                  )}
+                  <div className="relative w-10 h-10 mx-auto mb-4">
+                    <div className="absolute inset-0 border-2 border-andromeda-800 rounded-full" />
+                    <div className="absolute inset-0 border-2 border-andromeda-400 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                  <p className="text-sm font-medium text-zinc-200">Analizando recibo...</p>
+                  <p className="text-xs text-zinc-500 mt-1">Gemini está leyendo los datos</p>
                 </div>
               )}
 
-              {/* STEP: confirm */}
+              {/* CONFIRM */}
               {step === 'confirm' && extracted && (
                 <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className={`badge-${extracted.service_type} text-sm`}>
-                      {extracted.service_type.charAt(0).toUpperCase() + extracted.service_type.slice(1)}
+                  <div className="flex items-center gap-2 mb-5">
+                    <span className={`badge-${extracted.service_type}`}>
+                      {SERVICE_ICON[extracted.service_type]} {SERVICE_LABEL[extracted.service_type]}
                     </span>
-                    <span className="text-xs text-zinc-500">
-                      Confianza IA: {Math.round(extracted.ai_confidence * 100)}%
-                    </span>
+                    <div className="flex-1 h-1 rounded-full bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-andromeda-400 transition-all"
+                        style={{ width: `${Math.round(extracted.ai_confidence * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-zinc-500">{Math.round(extracted.ai_confidence * 100)}%</span>
                   </div>
 
-                  <div className="space-y-2 mb-5">
+                  <div className="bg-zinc-800/50 rounded-xl overflow-hidden mb-5">
                     {[
-                      { label: 'Proveedor', value: extracted.provider },
-                      { label: 'Fecha', value: extracted.issue_date },
+                      { label: 'Proveedor', value: extracted.provider || '—' },
+                      { label: 'Fecha', value: extracted.issue_date || '—' },
                       { label: 'Periodo', value: extracted.period_start && extracted.period_end ? `${extracted.period_start} → ${extracted.period_end}` : '—' },
                       { label: 'Consumo', value: extracted.consumption ? `${extracted.consumption} ${extracted.consumption_unit}` : '—' },
-                      { label: 'Importe', value: `$${extracted.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${extracted.currency}`, highlight: true },
-                    ].map(row => (
-                      <div key={row.label} className="flex justify-between items-center py-2 border-b border-zinc-800 last:border-0">
+                    ].map((row, i) => (
+                      <div key={row.label} className={clsx('flex justify-between px-4 py-2.5', i > 0 && 'border-t border-zinc-800')}>
                         <span className="text-xs text-zinc-500">{row.label}</span>
-                        <span className={clsx('text-sm', row.highlight ? 'text-andromeda-200 font-medium' : 'text-zinc-200')}>
-                          {row.value}
-                        </span>
+                        <span className="text-xs text-zinc-300">{row.value}</span>
                       </div>
                     ))}
                   </div>
 
+                  <div className="flex items-center justify-between bg-andromeda-800/30 border border-andromeda-600/30 rounded-xl px-4 py-3 mb-5">
+                    <span className="text-sm text-zinc-400">Total a pagar</span>
+                    <span className="text-xl font-semibold text-andromeda-200">
+                      ${extracted.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+
                   <div className="flex gap-3">
-                    <button onClick={() => setStep('preview')} className="btn-ghost flex-1">Corregir</button>
-                    <button onClick={handleSave} className="btn-primary flex-1">Guardar</button>
+                    <button onClick={() => setStep('idle')} className="btn-ghost flex-1">Reintentar</button>
+                    <button onClick={handleSave} className="btn-primary flex-1">Guardar recibo</button>
                   </div>
                 </div>
               )}
 
-              {/* STEP: saving */}
+              {/* SAVING */}
               {step === 'saving' && (
-                <div className="text-center py-8">
+                <div className="text-center py-10">
                   <div className="w-10 h-10 border-2 border-andromeda-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                   <p className="text-sm text-zinc-300">Guardando...</p>
                 </div>
               )}
 
-              {/* STEP: done */}
+              {/* DONE */}
               {step === 'done' && (
-                <div className="text-center py-8">
-                  <div className="w-12 h-12 rounded-full bg-andromeda-800/60 border border-andromeda-600/40 flex items-center justify-center mx-auto mb-3">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#97C459" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="text-center py-10">
+                  <div className="w-14 h-14 rounded-full bg-andromeda-800/60 border border-andromeda-600/40 flex items-center justify-center mx-auto mb-4">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#97C459" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="20,6 9,17 4,12"/>
                     </svg>
                   </div>
-                  <p className="text-sm font-medium text-zinc-100">¡Recibo guardado!</p>
+                  <p className="text-sm font-medium text-zinc-100">Recibo guardado</p>
+                  <p className="text-xs text-zinc-500 mt-1">Los datos quedaron registrados</p>
                 </div>
               )}
 
-              {/* STEP: error */}
+              {/* ERROR */}
               {step === 'error' && (
-                <div className="text-center py-6">
-                  <p className="text-red-400 text-sm mb-1">Error al procesar</p>
-                  <p className="text-zinc-500 text-xs mb-5">{error}</p>
-                  <button onClick={() => setStep('preview')} className="btn-ghost">Intentar de nuevo</button>
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  </div>
+                  <p className="text-sm font-medium text-red-400 mb-1">No se pudo procesar</p>
+                  <p className="text-xs text-zinc-500 mb-5 max-w-xs mx-auto">{error}</p>
+                  <button onClick={() => setStep('idle')} className="btn-ghost">Intentar de nuevo</button>
                 </div>
               )}
+
             </div>
           </div>
         </div>
