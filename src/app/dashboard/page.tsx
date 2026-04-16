@@ -19,9 +19,8 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 
 export default async function DashboardPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { session } } = await supabase.auth.getSession()
 
-  // Últimos 12 meses de recibos
   const { data: receipts } = await supabase
     .schema('andromeda')
     .from('receipts')
@@ -39,11 +38,10 @@ export default async function DashboardPage() {
   }
   const recent = all.slice(0, 5)
 
-  const userName = user?.email?.split('@')[0] ?? 'usuario'
+  const userName = session?.user?.email?.split('@')[0] ?? 'usuario'
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-zinc-100">
           Bienvenido, <span className="text-andromeda-200">{userName}</span>
@@ -53,61 +51,34 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          label="Total registrado"
-          value={`$${totalSpent.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
-          sub="todos los servicios"
-          color="text-andromeda-200"
-        />
-        <StatCard
-          label="Luz"
-          value={`$${byService.luz.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
-          color="text-amber-400"
-        />
-        <StatCard
-          label="Agua"
-          value={`$${byService.agua.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
-          color="text-blue-400"
-        />
-        <StatCard
-          label="Gas"
-          value={`$${byService.gas.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
-          color="text-orange-400"
-        />
+        <StatCard label="Total registrado" value={`$${totalSpent.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`} sub="todos los servicios" color="text-andromeda-200" />
+        <StatCard label="Luz"  value={`$${byService.luz.toLocaleString('es-MX',  { minimumFractionDigits: 0 })}`} color="text-amber-400" />
+        <StatCard label="Agua" value={`$${byService.agua.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`} color="text-blue-400" />
+        <StatCard label="Gas"  value={`$${byService.gas.toLocaleString('es-MX',  { minimumFractionDigits: 0 })}`} color="text-orange-400" />
       </div>
 
-      {/* Últimos recibos */}
       <div className="card">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-sm font-medium text-zinc-100">Últimos recibos</h2>
-          <Link href="/recibos" className="text-xs text-andromeda-400 hover:text-andromeda-200 transition-colors">
-            Ver todos →
-          </Link>
+          <Link href="/recibos" className="text-xs text-andromeda-400 hover:text-andromeda-200 transition-colors">Ver todos →</Link>
         </div>
 
         {recent.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-zinc-500 text-sm">Aún no hay recibos registrados.</p>
-            <Link href="/recibos" className="btn-primary inline-block mt-4">
-              Subir primer recibo
-            </Link>
+            <Link href="/recibos" className="btn-primary inline-block mt-4">Subir primer recibo</Link>
           </div>
         ) : (
           <div className="space-y-2">
             {recent.map(r => (
               <div key={r.id} className="flex items-center justify-between py-2.5 border-b border-zinc-800 last:border-0">
                 <div className="flex items-center gap-3">
-                  <span className={`badge-${r.service_type}`}>
-                    {SERVICE_LABELS[r.service_type]}
-                  </span>
+                  <span className={`badge-${r.service_type}`}>{SERVICE_LABELS[r.service_type]}</span>
                   <div>
                     <p className="text-sm text-zinc-200">{r.provider ?? 'Proveedor'}</p>
                     <p className="text-xs text-zinc-500">
-                      {r.issue_date
-                        ? format(new Date(r.issue_date), "d MMM yyyy", { locale: es })
-                        : 'Sin fecha'}
+                      {r.issue_date ? format(new Date(r.issue_date), "d MMM yyyy", { locale: es }) : 'Sin fecha'}
                       {r.consumption && ` · ${r.consumption} ${SERVICE_UNITS[r.service_type]}`}
                     </p>
                   </div>
@@ -121,7 +92,6 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {/* Accesos rápidos */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
         <Link href="/recibos" className="card hover:border-andromeda-600/50 transition-colors group cursor-pointer">
           <div className="flex items-center gap-3">
