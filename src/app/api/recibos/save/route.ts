@@ -2,10 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
+  // Verificar sesión por cookie directamente
+  const allCookies = request.cookies.getAll()
+  const hasSession = allCookies.some(c =>
+    c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
+  )
+  if (!hasSession) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+
+  // Para el insert necesitamos el user_id — usar supabase con la cookie
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  const userId = session?.user?.id
+
+  if (!userId) {
+    return NextResponse.json({ error: 'No se pudo obtener usuario' }, { status: 401 })
   }
 
   try {
@@ -15,7 +27,7 @@ export async function POST(request: NextRequest) {
       .schema('andromeda')
       .from('receipts')
       .insert({
-        user_id:          user.id,
+        user_id:          userId,
         service_type:     body.service_type,
         provider:         body.provider ?? null,
         issue_date:       body.issue_date ?? null,
@@ -30,13 +42,9 @@ export async function POST(request: NextRequest) {
       })
 
     if (error) throw error
-
     return NextResponse.json({ ok: true })
   } catch (err: any) {
-    console.error('Error saving receipt:', err)
-    return NextResponse.json(
-      { error: err.message ?? 'Error al guardar' },
-      { status: 500 }
-    )
+    console.error('Save receipt error:', err)
+    return NextResponse.json({ error: err.message ?? 'Error al guardar' }, { status: 500 })
   }
 }
