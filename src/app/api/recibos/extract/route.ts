@@ -1,28 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const EXTRACT_PROMPT = `Eres un asistente especializado en leer recibos de servicios del hogar en México.
+const SYSTEM_PROMPT = `Eres un asistente especializado en leer recibos de servicios del hogar en México.
 Analiza la imagen del recibo y extrae los datos.
+Responde ÚNICAMENTE con un objeto JSON válido, sin markdown ni texto adicional.`
 
-Responde ÚNICAMENTE con un objeto JSON válido, sin markdown ni texto adicional:
+const USER_PROMPT = `Extrae los datos del recibo en este JSON exacto:
 
 {
   "service_type": "luz" o "agua" o "gas",
-  "provider": "nombre del proveedor (ej: CFE, CAEM, Naturgy, Gas Natural)",
+  "provider": "nombre del proveedor (CFE, CAEM, Naturgy, etc)",
   "issue_date": "YYYY-MM-DD o null",
   "period_start": "YYYY-MM-DD o null",
   "period_end": "YYYY-MM-DD o null",
   "consumption": numero o null,
   "consumption_unit": "kWh" o "m3" o "L" o null,
-  "amount": numero sin simbolo de pesos,
+  "amount": numero total a pagar sin simbolo $,
   "currency": "MXN",
   "ai_confidence": numero entre 0 y 1,
-  "raw_text": "datos clave encontrados en el recibo"
+  "raw_text": "datos clave del recibo"
 }
 
-Reglas:
-- CFE = luz, CAEM/SACMEX/Aguakan = agua, Gas Natural/Naturgy/Sempra = gas
-- amount es el total a pagar, nunca null
-- Si no puedes leer bien el recibo baja ai_confidence a menos de 0.5`
+Reglas: CFE=luz, CAEM/SACMEX/Aguakan=agua, Gas Natural/Naturgy/Sempra=gas. amount nunca null.`
 
 export async function POST(request: NextRequest) {
   const allCookies = request.cookies.getAll()
@@ -33,8 +31,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'GEMINI_API_KEY no configurada' }, { status: 500 })
+  const apiKey = process.env.GEMINI_KEY
+  if (!apiKey) return NextResponse.json({ error: 'GEMINI_KEY no configurada en Vercel' }, { status: 500 })
 
   try {
     const formData = await request.formData()
@@ -45,17 +43,22 @@ export async function POST(request: NextRequest) {
     const base64 = Buffer.from(bytes).toString('base64')
     const mimeType = file.type || 'image/jpeg'
 
-    // Usar gemini-2.0-flash con API v1beta
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
 
     const body = {
       contents: [{
+        role: 'user',
         parts: [
-          { text: EXTRACT_PROMPT },
-          { inline_data: { mime_type: mimeType, data: base64 } }
+          { text: USER_PROMPT },
+          { inlineData: { mimeType, data: base64 } }
         ]
       }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 }
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 1024,
+        thinkingConfig: { thinkingBudget: 0 }
+      }
     }
 
     const res = await fetch(url, {
@@ -65,8 +68,8 @@ export async function POST(request: NextRequest) {
     })
 
     if (!res.ok) {
-      const err = await res.text()
-      throw new Error(`Gemini error: ${err}`)
+      const err = await res.json()
+      throw new Error(err.error?.message ?? 'Gemini error')
     }
 
     const data = await res.json()
