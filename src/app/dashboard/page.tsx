@@ -1,11 +1,34 @@
-import { createClient } from '@/lib/supabase/server'
-import { Receipt } from '@/types'
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import Link from 'next/link'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts'
 
-const SERVICE_LABELS: Record<string, string> = { luz: 'Luz', agua: 'Agua', gas: 'Gas' }
-const SERVICE_UNITS: Record<string, string>  = { luz: 'kWh', agua: 'L', gas: 'm³' }
+const SVC_COLOR: Record<string, string> = { luz: '#F59E0B', agua: '#3B82F6', gas: '#F97316' }
+const SVC_LABEL: Record<string, string> = { luz: 'Luz ⚡', agua: 'Agua 💧', gas: 'Gas 🔥' }
+
+interface Receipt {
+  id: string
+  service_type: 'luz' | 'agua' | 'gas'
+  provider: string
+  amount: number
+  consumption: number
+  consumption_unit: string
+  period_start: string
+  period_end: string
+  issue_date: string
+  due_date: string
+  tariff: string
+  consumption_basic: number
+  consumption_intermediate: number
+  consumption_excess: number
+  government_subsidy: number
+  subtotal: number
+  tax_amount: number
+}
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
   return (
@@ -17,32 +40,65 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
   )
 }
 
-export default async function DashboardPage() {
+export default function DashboardPage() {
+  const [receipts, setReceipts] = useState<Receipt[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userName, setUserName] = useState('usuario')
   const supabase = createClient()
-  const { data: { session } } = await supabase.auth.getSession()
 
-  const { data: receipts } = await supabase
-    
-    .from('andromeda_receipts')
-    .select('*')
-    .order('issue_date', { ascending: false })
-    .limit(20)
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) setUserName(user.email?.split('@')[0] ?? 'usuario')
 
-  const all = (receipts ?? []) as Receipt[]
+      const { data } = await supabase
+        .from('andromeda_receipts')
+        .select('*')
+        .order('period_start', { ascending: false })
+        .limit(24)
 
-  const totalSpent = all.reduce((s, r) => s + (r.amount ?? 0), 0)
+      setReceipts((data ?? []) as Receipt[])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const totalSpent = receipts.reduce((s, r) => s + Number(r.amount), 0)
   const byService = {
-    luz:  all.filter(r => r.service_type === 'luz').reduce((s, r) => s + r.amount, 0),
-    agua: all.filter(r => r.service_type === 'agua').reduce((s, r) => s + r.amount, 0),
-    gas:  all.filter(r => r.service_type === 'gas').reduce((s, r) => s + r.amount, 0),
+    luz:  receipts.filter(r => r.service_type === 'luz').reduce((s, r) => s + Number(r.amount), 0),
+    agua: receipts.filter(r => r.service_type === 'agua').reduce((s, r) => s + Number(r.amount), 0),
+    gas:  receipts.filter(r => r.service_type === 'gas').reduce((s, r) => s + Number(r.amount), 0),
   }
-  const recent = all.slice(0, 5)
 
-  const userName = session?.user?.email?.split('@')[0] ?? 'usuario'
+  // Datos para gráfica de gasto por periodo
+  const chartData = receipts
+    .slice()
+    .reverse()
+    .reduce((acc: any[], r) => {
+      const label = r.period_end
+        ? format(new Date(r.period_end), 'MMM yy', { locale: es })
+        : 'Sin fecha'
+      const existing = acc.find(d => d.periodo === label)
+      if (existing) {
+        existing[r.service_type] = (existing[r.service_type] ?? 0) + Number(r.amount)
+      } else {
+        acc.push({ periodo: label, [r.service_type]: Number(r.amount) })
+      }
+      return acc
+    }, [])
+
+  const recent = receipts.slice(0, 5)
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-2 border-andromeda-400 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-8">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
+      {/* Header */}
+      <div>
         <h1 className="text-2xl font-semibold text-zinc-100">
           Bienvenido, <span className="text-andromeda-200">{userName}</span>
         </h1>
@@ -51,48 +107,75 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total registrado" value={`$${totalSpent.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`} sub="todos los servicios" color="text-andromeda-200" />
-        <StatCard label="Luz"  value={`$${byService.luz.toLocaleString('es-MX',  { minimumFractionDigits: 0 })}`} color="text-amber-400" />
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard label="Total registrado" value={`$${totalSpent.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`} sub={`${receipts.length} recibos`} color="text-andromeda-200" />
+        <StatCard label="Luz" value={`$${byService.luz.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`} color="text-amber-400" />
         <StatCard label="Agua" value={`$${byService.agua.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`} color="text-blue-400" />
-        <StatCard label="Gas"  value={`$${byService.gas.toLocaleString('es-MX',  { minimumFractionDigits: 0 })}`} color="text-orange-400" />
+        <StatCard label="Gas" value={`$${byService.gas.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`} color="text-orange-400" />
       </div>
 
+      {/* Gráfica */}
+      {chartData.length > 0 && (
+        <div className="card">
+          <h2 className="text-sm font-medium text-zinc-100 mb-4">Gasto por periodo</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+              <XAxis dataKey="periodo" tick={{ fontSize: 11, fill: '#71717a' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#71717a' }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 12 }}
+                formatter={(v: any) => [`$${Number(v).toLocaleString('es-MX')}`, '']}
+              />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
+              {['luz', 'agua', 'gas'].map(s => (
+                <Bar key={s} dataKey={s} name={SVC_LABEL[s]} fill={SVC_COLOR[s]} radius={[3, 3, 0, 0]} maxBarSize={32} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Últimos recibos */}
       <div className="card">
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-medium text-zinc-100">Últimos recibos</h2>
           <Link href="/recibos" className="text-xs text-andromeda-400 hover:text-andromeda-200 transition-colors">Ver todos →</Link>
         </div>
 
         {recent.length === 0 ? (
           <div className="text-center py-10">
-            <p className="text-zinc-500 text-sm">Aún no hay recibos registrados.</p>
-            <Link href="/recibos" className="btn-primary inline-block mt-4">Subir primer recibo</Link>
+            <p className="text-zinc-500 text-sm mb-4">Aún no hay recibos registrados.</p>
+            <Link href="/recibos" className="btn-primary">Subir primer recibo</Link>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-0">
             {recent.map(r => (
-              <div key={r.id} className="flex items-center justify-between py-2.5 border-b border-zinc-800 last:border-0">
+              <Link key={r.id} href={`/recibos/${r.id}`}
+                className="flex items-center justify-between py-3 border-b border-zinc-800 last:border-0 hover:bg-zinc-800/30 -mx-2 px-2 rounded-lg transition-colors">
                 <div className="flex items-center gap-3">
-                  <span className={`badge-${r.service_type}`}>{SERVICE_LABELS[r.service_type]}</span>
-                  <div>
-                    <p className="text-sm text-zinc-200">{r.provider ?? 'Proveedor'}</p>
-                    <p className="text-xs text-zinc-500">
-                      {r.issue_date ? format(new Date(r.issue_date), "d MMM yyyy", { locale: es }) : 'Sin fecha'}
-                      {r.consumption && ` · ${r.consumption} ${SERVICE_UNITS[r.service_type]}`}
-                    </p>
-                  </div>
+                  <span className={`badge-${r.service_type}`}>
+                    {r.service_type === 'luz' ? '⚡' : r.service_type === 'agua' ? '💧' : '🔥'} {r.provider}
+                  </span>
+                  <span className="text-xs text-zinc-500">
+                    {r.period_end ? format(new Date(r.period_end), 'MMM yyyy', { locale: es }) : '—'}
+                    {r.consumption ? ` · ${r.consumption} ${r.consumption_unit ?? ''}` : ''}
+                  </span>
                 </div>
-                <span className="text-sm font-medium text-zinc-100">
-                  ${r.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-zinc-100">
+                    ${Number(r.amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#52525b" strokeWidth="2"><polyline points="9,18 15,12 9,6"/></svg>
+                </div>
+              </Link>
             ))}
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+      {/* Accesos rápidos */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Link href="/recibos" className="card hover:border-andromeda-600/50 transition-colors group cursor-pointer">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-andromeda-800/60 flex items-center justify-center border border-andromeda-600/30 group-hover:border-andromeda-400/50 transition-colors">
@@ -106,8 +189,7 @@ export default async function DashboardPage() {
             </div>
           </div>
         </Link>
-
-        <div className="card opacity-50 cursor-not-allowed">
+        <div className="card opacity-40 cursor-not-allowed">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-zinc-800 flex items-center justify-center border border-zinc-700">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -116,7 +198,7 @@ export default async function DashboardPage() {
             </div>
             <div>
               <p className="text-sm font-medium text-zinc-400">Dispositivos</p>
-              <p className="text-xs text-zinc-600">Tapo y Shelly — próximamente</p>
+              <p className="text-xs text-zinc-600">Tapo y Shelly — Sprint 3</p>
             </div>
           </div>
         </div>
