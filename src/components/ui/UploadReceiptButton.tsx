@@ -197,11 +197,23 @@ export default function UploadReceiptButton({ variant = 'default' }: Props) {
                     <span className="text-xs text-zinc-500 truncate flex-1">{extracted.provider}</span>
                     <span className="text-xs text-zinc-600">IA {Math.round(extracted.ai_confidence * 100)}%</span>
                   </div>
-                  <div className="flex items-center justify-between bg-andromeda-800/30 border border-andromeda-600/30 rounded-xl px-4 py-3 mb-4">
-                    <span className="text-sm text-zinc-400">Total a pagar</span>
-                    <span className="text-2xl font-semibold text-andromeda-200">
-                      ${extracted.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                    </span>
+                  <div className="bg-andromeda-800/30 border border-andromeda-600/30 rounded-xl px-4 py-3 mb-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-zinc-400">Total del mes</span>
+                      <span className="text-2xl font-semibold text-andromeda-200">
+                        ${extracted.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    {(extracted.previous_balance ?? 0) > 0 && <>
+                      <div className="flex items-center justify-between border-t border-andromeda-600/20 pt-2">
+                        <span className="text-xs text-amber-400">+ Adeudo anterior</span>
+                        <span className="text-sm text-amber-400">${Number(extracted.previous_balance).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-zinc-700 pt-2">
+                        <span className="text-xs text-zinc-500">Total a pagar</span>
+                        <span className="text-sm font-medium text-zinc-300">${Number(extracted.total_with_balance ?? extracted.amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </>}
                   </div>
                   <div className="bg-zinc-800/40 rounded-xl px-4 py-1 mb-5 max-h-52 overflow-y-auto">
                     <Row label="Periodo" value={extracted.period_start && extracted.period_end ? `${extracted.period_start} → ${extracted.period_end}` : null} />

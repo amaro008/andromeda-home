@@ -81,10 +81,10 @@ export default function ReceiptDetailPage() {
       </div>
 
       {/* Total destacado */}
-      <div className="card bg-andromeda-800/20 border-andromeda-600/30">
+      <div className="card bg-andromeda-800/20 border-andromeda-600/30 space-y-2">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Total pagado</p>
+            <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">Total del mes</p>
             <p className="text-3xl font-semibold text-andromeda-200">
               ${Number(r.amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
             </p>
@@ -94,6 +94,18 @@ export default function ReceiptDetailPage() {
             {r.due_date && <p className="text-sm text-zinc-300">{format(new Date(r.due_date), "d MMM yyyy", { locale: es })}</p>}
           </div>
         </div>
+        {Number(r.previous_balance) > 0 && (
+          <div className="border-t border-andromeda-600/20 pt-2 space-y-1">
+            <div className="flex justify-between">
+              <span className="text-xs text-amber-400">Adeudo anterior</span>
+              <span className="text-sm text-amber-400">+ ${Number(r.previous_balance).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between border-t border-zinc-700 pt-1">
+              <span className="text-xs text-zinc-400">Total a pagar</span>
+              <span className="text-sm font-semibold text-zinc-200">${Number(r.total_with_balance ?? r.amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Periodo y consumo */}
